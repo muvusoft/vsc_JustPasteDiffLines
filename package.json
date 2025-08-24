@@ -1,15 +1,13 @@
 {
   "name": "just-paste-diff-lines",
   "displayName": "Just Paste Diff Lines",
-  "description": "Preview/apply +/- lines diffs in VS Code",
-  "version": "1.0.0",
-  "publisher": "MuVu",
+  "version": "0.0.1",
+  "publisher": "muvu",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "activationEvents": [
-    "*"
-  ],
+  "main": "./extension.js",
+  "activationEvents": ["*"],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -28,6 +26,5 @@
         }
       ]
     }
-  },
-  "main": "./extension.js"
+  }
 }
