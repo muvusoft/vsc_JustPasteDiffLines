@@ -192,9 +192,18 @@ class DiffViewProvider {
         await vscode.commands.executeCommand('vscode.diff', LEFT_URI, RIGHT_URI, 'Just Paste Diff: Preview');
     }
 
-    resetPreview() {
-        // Only clear the preview panes; do not touch user's textarea or last diff text
-        this._diffContentProvider.reset();
+    async resetPreview() {
+        if (this._lastSourceUri) {
+            try {
+                const doc = await vscode.workspace.openTextDocument(this._lastSourceUri);
+                const originalText = doc.getText();
+                // Preview hiç yapılmamış gibi göster → iki taraf aynı
+                this._diffContentProvider.setContents(originalText, originalText);
+                return;
+            } catch {}
+        }
+        // Eğer kaynak yoksa en azından iki tarafı da aynı boş göster
+        this._diffContentProvider.setContents('', '');
     }
 
     async closePreview() {
