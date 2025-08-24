@@ -59,9 +59,8 @@ class DiffViewProvider {
         this._view = null;
         this._diffContentProvider = diffContentProvider;
 
-        /** State to make Apply work even when diff is focused */
         this._lastSourceUri = null;
-        this._lastDiffText = '';       
+        this._lastDiffText = '';
     }
 
     resolveWebviewView(webviewView) {
@@ -102,16 +101,64 @@ class DiffViewProvider {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Just Paste Diff</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden; /* dış scrollbar tamamen gizlenir */
+    font-family: var(--vscode-font-family);
+  }
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+  }
+  h3 { margin: 0; }
+  p { margin: .2rem 0 .8rem 0; opacity: .8; }
+  #diffInput {
+    flex: 1;
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    overflow: auto;
+    box-sizing: border-box;
+    padding: 6px;
+    font-family: var(--vscode-editor-font-family);
+    font-size: var(--vscode-editor-font-size);
+    line-height: var(--vscode-editor-line-height);
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    border: 1px solid var(--vscode-editorWidget-border);
+    border-radius: 4px;
+  }
+  #diffInput::-webkit-scrollbar { width: 8px; }
+  #diffInput::-webkit-scrollbar-thumb {
+    background: var(--vscode-editorWidget-border);
+    border-radius: 4px;
+  }
+  .controls {
+    margin-top: .6rem;
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+</style>
 </head>
-<body style="font-family: var(--vscode-font-family); padding: 8px;">
-  <h3 style="margin-top:0;">Just Paste Diff Lines</h3>
-  <p style="opacity:.8;margin:.2rem 0 .8rem 0;">Only lines starting with <code>+</code> or <code>-</code> are considered. Others are ignored.</p>
-  <textarea id="diffInput" style="width:100%;height:200px;"></textarea>
-  <div style="margin-top:.6rem; display:flex; gap:.5rem; flex-wrap:wrap;">
-    <button id="btnPreview">Preview</button>
-    <button id="btnApply">Apply</button>
-    <button id="btnReset">Reset Preview</button>
-    <button id="btnClose">Close Preview</button>
+<body>
+  <div class="wrap">
+    <h3>Just Paste Diff Lines</h3>
+    <p>Only lines starting with <code>+</code> or <code>-</code> are considered. Others are ignored.</p>
+    <textarea id="diffInput"></textarea>
+    <div class="controls">
+      <button id="btnPreview">Preview</button>
+      <button id="btnApply">Apply</button>
+      <button id="btnReset">Reset Preview</button>
+      <button id="btnClose">Close Preview</button>
+    </div>
   </div>
   <script>
     const vscode = acquireVsCodeApi();
