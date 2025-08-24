@@ -9,7 +9,6 @@
   },
   "main": "./extension.js",
   "activationEvents": [
-    "*",
     "onView:diffView",
     "onCommand:justPasteDiff.openPanel"
   ],
@@ -36,7 +35,21 @@
       {
         "command": "justPasteDiff.openPanel",
         "title": "Just Paste Diff: Open Panel"
+      },
+      {
+        "command": "diffView.applyPatch",
+        "title": "Just Paste Diff: Apply Patch"
+      },
+      {
+        "command": "diffView.previewPatch",
+        "title": "Just Paste Diff: Preview Patch"
       }
     ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npx --no-install vsce package"
+  },
+  "devDependencies": {
+    "vsce": "^2.15.0"
   }
 }

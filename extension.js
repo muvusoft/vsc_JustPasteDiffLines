@@ -1,166 +1,231 @@
-const vscode = require("vscode");
+// extension.js
+const vscode = require('vscode');
 
-/**
- * DiffPanelProvider: view provider for Activity Bar panel
- * We also register a fallback command that opens a WebviewPanel (works even if view-provider doesn't instantiate).
- */
-class DiffPanelProvider {
-  constructor(extensionUri) {
-    this.extensionUri = extensionUri;
-    this._view = null;
-  }
+function activate(context) {
+    console.log('Extension "just-paste-diff-lines" is active');
 
-  resolveWebviewView(webviewView) {
-    vscode.window.showInformationMessage("📌 Diff Panel view resolved (resolveWebviewView called)");
-    console.log("[JustPasteDiff] resolveWebviewView CALLED");
-    this._view = webviewView;
+    const provider = new DiffViewProvider(context.extensionUri);
 
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this.extensionUri]
-    };
+    // View provider: id MUST match package.json -> contributes.views[*].id = "diffView"
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(DiffViewProvider.viewType, provider)
+    );
 
-    webviewView.webview.html = getHtml();
-
-    webviewView.webview.onDidReceiveMessage(async (message) => {
-      await handleMessage(message);
-    });
-  }
+    // Commands (also declared in package.json)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('diffView.applyPatch', () => provider.applyPatch())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('diffView.previewPatch', () => provider.previewPatch())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('justPasteDiff.openPanel', async () => {
+            // Reveal the container, then focus the view
+            try {
+                await vscode.commands.executeCommand('workbench.view.extension.diffContainer');
+            } catch {}
+            try {
+                // VS Code automatically contributes a <viewId>.focus command
+                await vscode.commands.executeCommand('diffView.focus');
+            } catch {}
+        })
+    );
 }
 
-async function handleMessage(message) {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    vscode.window.showErrorMessage("No active editor!");
-    return;
-  }
-  const originalText = editor.document.getText();
+class DiffViewProvider {
+    static viewType = 'diffView';
 
-  if (message.command === "preview") {
-    try {
-      const newText = applyPatchCustom(originalText, message.diff);
-      const leftUri = vscode.Uri.parse("untitled:Original");
-      const rightUri = vscode.Uri.parse("untitled:Modified");
+    constructor(extensionUri) {
+        this._extensionUri = extensionUri;
+        this._view = null;
+        this._diffText = '';
+    }
 
-      await vscode.workspace.openTextDocument(leftUri).then(() => {
+    resolveWebviewView(webviewView, _context, _token) {
+        this._view = webviewView;
+
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this._extensionUri]
+        };
+
+        webviewView.webview.html = this._getHtmlForWebview();
+
+        webviewView.webview.onDidReceiveMessage(message => {
+            if (!message) return;
+            switch (message.command) {
+                case 'apply':
+                    this._diffText = message.text ?? '';
+                    vscode.commands.executeCommand('diffView.applyPatch');
+                    break;
+                case 'preview':
+                    this._diffText = message.text ?? '';
+                    vscode.commands.executeCommand('diffView.previewPatch');
+                    break;
+            }
+        });
+    }
+
+    _getHtmlForWebview() {
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Just Paste Diff</title>
+</head>
+<body style="font-family: var(--vscode-font-family); padding: 8px;">
+  <h3 style="margin-top:0;">Just Paste Diff Lines</h3>
+  <p style="opacity:.8;margin:.2rem 0 .8rem 0;">Only lines starting with <code>+</code> or <code>-</code> are considered. Others are ignored.</p>
+  <textarea id="diffInput" style="width:100%;height:200px;"></textarea>
+  <div style="margin-top:.6rem; display:flex; gap:.5rem;">
+    <button id="btnPreview">Preview</button>
+    <button id="btnApply">Apply</button>
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.getElementById('btnPreview').addEventListener('click', () => {
+      vscode.postMessage({ command: 'preview', text: document.getElementById('diffInput').value });
+    });
+    document.getElementById('btnApply').addEventListener('click', () => {
+      vscode.postMessage({ command: 'apply', text: document.getElementById('diffInput').value });
+    });
+  </script>
+</body>
+</html>`;
+    }
+
+    applyPatch() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage('No active text editor to apply the patch.');
+            return;
+        }
+
+        const originalText = editor.document.getText();
+        const diff = this._diffText ?? '';
+        const patchedText = applyPatchCustom(originalText, diff);
+
+        editor.edit(editBuilder => {
+            const start = new vscode.Position(0, 0);
+            const end = new vscode.Position(editor.document.lineCount, 0);
+            editBuilder.replace(new vscode.Range(start, end), patchedText);
+        });
+    }
+
+    async previewPatch() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage('No active text editor to preview the patch.');
+            return;
+        }
+
+        const originalText = editor.document.getText();
+        const diff = this._diffText ?? '';
+        const patchedText = applyPatchCustom(originalText, diff);
+
+        const leftUri = vscode.Uri.parse('untitled:Just Paste Diff — Original');
+        const rightUri = vscode.Uri.parse('untitled:Just Paste Diff — Patched');
+
+        // Open both untitled docs first
+        await Promise.all([
+            vscode.workspace.openTextDocument(leftUri),
+            vscode.workspace.openTextDocument(rightUri)
+        ]);
+
+        // Insert contents via single WorkspaceEdit
         const edit = new vscode.WorkspaceEdit();
         edit.insert(leftUri, new vscode.Position(0, 0), originalText);
-        return vscode.workspace.applyEdit(edit);
-      });
+        edit.insert(rightUri, new vscode.Position(0, 0), patchedText);
+        await vscode.workspace.applyEdit(edit);
 
-      await vscode.workspace.openTextDocument(rightUri).then(() => {
-        const edit = new vscode.WorkspaceEdit();
-        edit.insert(rightUri, new vscode.Position(0, 0), newText);
-        return vscode.workspace.applyEdit(edit);
-      });
-
-      vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "Diff Preview");
-    } catch (err) {
-      vscode.window.showErrorMessage("Failed to preview diff: " + err);
+        // Show diff
+        await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, 'Just Paste Diff: Preview');
     }
-  } else if (message.command === "apply") {
-    try {
-      const newText = applyPatchCustom(originalText, message.diff);
-      const edit = new vscode.WorkspaceEdit();
-      const fullRange = new vscode.Range(
-        editor.document.positionAt(0),
-        editor.document.positionAt(originalText.length)
-      );
-      edit.replace(editor.document.uri, fullRange, newText);
-      await vscode.workspace.applyEdit(edit);
-      await editor.document.save();
-      vscode.window.showInformationMessage("Changes applied!");
-    } catch (err) {
-      vscode.window.showErrorMessage("Failed to apply diff: " + err);
-    }
-  }
 }
 
 /**
- * Custom patch: only lines starting with + or - are acted on.
+ * Custom patch v2:
+ * - Only lines starting with + or - are considered.
+ * - "- old" followed immediately by "+ new" => replace first matching "old" (from current cursor) with "new".
+ * - Lone "- old" => delete first matching "old" (from current cursor).
+ * - Lone "+ new" => insert after the last touched position (or end if none).
+ * - Preserves original EOL style.
  */
 function applyPatchCustom(originalText, diffText) {
-  const originalLines = originalText.split("\n");
-  const diffLines = diffText.split("\n");
+    const EOL = originalText.includes('\r\n') ? '\r\n' : '\n';
+    let lines = originalText.split(/\r?\n/);
 
-  const result = [...originalLines];
-  for (const line of diffLines) {
-    if (line.startsWith("+")) {
-      result.push(line.slice(1));
-    } else if (line.startsWith("-")) {
-      const toRemove = line.slice(1);
-      const idx = result.indexOf(toRemove);
-      if (idx !== -1) result.splice(idx, 1);
+    const ops = parseSimpleDiff(diffText || '');
+
+    let cursor = 0;
+    for (const op of ops) {
+        if (op.type === 'replace') {
+            let pos = indexOfLine(lines, op.old, cursor);
+            if (pos === -1) pos = indexOfLine(lines, op.old, 0);
+            if (pos !== -1) {
+                lines.splice(pos, 1, op.new);
+                cursor = pos + 1;
+            } else {
+                const insertPos = clamp(cursor, 0, lines.length);
+                lines.splice(insertPos, 0, op.new);
+                cursor = insertPos + 1;
+            }
+        } else if (op.type === 'delete') {
+            let pos = indexOfLine(lines, op.old, cursor);
+            if (pos === -1) pos = indexOfLine(lines, op.old, 0);
+            if (pos !== -1) {
+                lines.splice(pos, 1);
+                cursor = pos;
+            }
+        } else if (op.type === 'insert') {
+            const insertPos = clamp(cursor, 0, lines.length);
+            lines.splice(insertPos, 0, op.new);
+            cursor = insertPos + 1;
+        }
     }
-  }
-  return result.join("\n");
+
+    return lines.join(EOL);
 }
 
-/**
- * The webview HTML (same for both view-provider and fallback panel)
- */
-function getHtml() {
-  const script = `
-    const vscode = acquireVsCodeApi();
-    function preview() {
-      const diff = document.getElementById("diffText").value;
-      vscode.postMessage({ command: "preview", diff });
+/** Parse only +/- lines. "- x" followed by "+ y" => replace; others => delete/insert. */
+function parseSimpleDiff(diffText) {
+    const raw = (diffText || '').split(/\r?\n/);
+    const ops = [];
+    for (let i = 0; i < raw.length; i++) {
+        const s = raw[i];
+        if (s.startsWith('-')) {
+            const oldLine = s.slice(1);
+            if (i + 1 < raw.length && raw[i + 1].startsWith('+')) {
+                const newLine = raw[i + 1].slice(1);
+                ops.push({ type: 'replace', old: oldLine, new: newLine });
+                i++; // consume the + line
+            } else {
+                ops.push({ type: 'delete', old: oldLine });
+            }
+        } else if (s.startsWith('+')) {
+            ops.push({ type: 'insert', new: s.slice(1) });
+        } // everything else ignored
     }
-    function apply() {
-      const diff = document.getElementById("diffText").value;
-      vscode.postMessage({ command: "apply", diff });
-    }
-  `;
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        body { font-family: sans-serif; padding: 10px; }
-        textarea { width: 100%; height: 220px; font-family: monospace; }
-        button { margin-top: 10px; margin-right: 10px; padding: 6px 12px; }
-      </style>
-    </head>
-    <body>
-      <h3>Paste your diff (+/- lines only)</h3>
-      <textarea id="diffText" placeholder="+ added line\n- removed line"></textarea><br>
-      <button onclick="preview()">Preview changes</button>
-      <button onclick="apply()">Apply changes</button>
-      <script>${script}</script>
-    </body>
-    </html>
-  `;
+    return ops;
 }
 
-/**
- * activate: register view provider AND a fallback command (open as WebviewPanel)
- */
-function activate(context) {
-  vscode.window.showInformationMessage("🚀 Just Paste Diff Lines extension activated!");
+/** Find exact line match from a starting index */
+function indexOfLine(arr, value, fromIndex) {
+    for (let i = Math.max(0, fromIndex | 0); i < arr.length; i++) {
+        if (arr[i] === value) return i;
+    }
+    return -1;
+}
 
-  const provider = new DiffPanelProvider(context.extensionUri);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("diffView", provider)
-  );
-
-  // fallback command: always works (createWebviewPanel)
-  const disposable = vscode.commands.registerCommand("justPasteDiff.openPanel", () => {
-    const panel = vscode.window.createWebviewPanel(
-      "justPasteDiff.panel",
-      "Diff Panel",
-      vscode.ViewColumn.Beside,
-      { enableScripts: true }
-    );
-    panel.webview.html = getHtml();
-
-    panel.webview.onDidReceiveMessage(async (message) => {
-      await handleMessage(message);
-    });
-  });
-  context.subscriptions.push(disposable);
+function clamp(x, min, max) {
+    return Math.min(Math.max(x, min), max);
 }
 
 function deactivate() {}
 
-module.exports = { activate, deactivate };
+module.exports = {
+    activate,
+    deactivate
+};
