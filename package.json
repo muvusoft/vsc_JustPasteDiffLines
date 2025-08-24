@@ -1,0 +1,39 @@
+{
+  "name": "my-diff-extension",
+  "displayName": "My Diff Extension",
+  "description": "Easily preview and apply diffs inside VSCode",
+  "version": "1.0.0",
+  "publisher": "myself",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "onView:diffView"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "diffContainer",
+          "title": "Diff Tool",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "diffContainer": [
+        {
+          "id": "diffView",
+          "name": "Diff Panel"
+        }
+      ]
+    }
+  },
+  "main": "./extension.js",
+  "scripts": {
+    "compile": "echo nothing"
+  },
+  "dependencies": {
+    "diff": "^5.2.0"
+  }
+}
