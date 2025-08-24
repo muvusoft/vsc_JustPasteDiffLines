@@ -1,2 +1,0 @@
-# vsc_JuspPatchDiff
-

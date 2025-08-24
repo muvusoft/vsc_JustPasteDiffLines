@@ -22,8 +22,7 @@ class DiffPanelProvider {
       localResourceRoots: [this.extensionUri]
     };
 
-    const panelHtml = getHtml(webviewView.webview, this.extensionUri);
-    webviewView.webview.html = panelHtml;
+    webviewView.webview.html = getHtml();
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       const editor = vscode.window.activeTextEditor;
@@ -40,24 +39,19 @@ class DiffPanelProvider {
           const leftUri = vscode.Uri.parse("untitled:Original");
           const rightUri = vscode.Uri.parse("untitled:Modified");
 
-          await vscode.workspace.openTextDocument(leftUri).then((doc) => {
+          await vscode.workspace.openTextDocument(leftUri).then(() => {
             const edit = new vscode.WorkspaceEdit();
             edit.insert(leftUri, new vscode.Position(0, 0), originalText);
             return vscode.workspace.applyEdit(edit);
           });
 
-          await vscode.workspace.openTextDocument(rightUri).then((doc) => {
+          await vscode.workspace.openTextDocument(rightUri).then(() => {
             const edit = new vscode.WorkspaceEdit();
             edit.insert(rightUri, new vscode.Position(0, 0), newText);
             return vscode.workspace.applyEdit(edit);
           });
 
-          vscode.commands.executeCommand(
-            "vscode.diff",
-            leftUri,
-            rightUri,
-            "Diff Preview"
-          );
+          vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "Diff Preview");
         } catch (err) {
           vscode.window.showErrorMessage("Failed to preview diff: " + err);
         }
@@ -66,7 +60,6 @@ class DiffPanelProvider {
       if (message.command === "apply") {
         try {
           const newText = applyPatchCustom(originalText, message.diff);
-
           const edit = new vscode.WorkspaceEdit();
           const fullRange = new vscode.Range(
             editor.document.positionAt(0),
@@ -85,17 +78,14 @@ class DiffPanelProvider {
 }
 
 /**
- * Custom patch logic:
- * - Lines starting with '+' → added
- * - Lines starting with '-' → removed
- * - All other lines in diff → ignored
+ * Only +/- lines are honored; everything else is ignored.
+ * '+' lines are appended; '-' lines remove the first matching line.
  */
 function applyPatchCustom(originalText, diffText) {
   const originalLines = originalText.split("\n");
   const diffLines = diffText.split("\n");
 
-  let result = [...originalLines];
-
+  const result = [...originalLines];
   for (const line of diffLines) {
     if (line.startsWith("+")) {
       result.push(line.slice(1));
@@ -104,13 +94,12 @@ function applyPatchCustom(originalText, diffText) {
       const idx = result.indexOf(toRemove);
       if (idx !== -1) result.splice(idx, 1);
     }
-    // context satırlarını tamamen ignore ediyoruz
+    // other lines ignored
   }
-
   return result.join("\n");
 }
 
-function getHtml(webview, extensionUri) {
+function getHtml() {
   const script = `
     const vscode = acquireVsCodeApi();
     function preview() {
@@ -126,10 +115,11 @@ function getHtml(webview, extensionUri) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8" />
       <style>
         body { font-family: sans-serif; padding: 10px; }
-        textarea { width: 100%; height: 200px; font-family: monospace; }
-        button { margin-top: 10px; margin-right: 10px; padding: 5px 12px; }
+        textarea { width: 100%; height: 220px; font-family: monospace; }
+        button { margin-top: 10px; margin-right: 10px; padding: 6px 12px; }
       </style>
     </head>
     <body>
