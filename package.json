@@ -1,9 +1,9 @@
 {
-  "name": "my-diff-extension",
-  "displayName": "My Diff Extension",
-  "description": "Easily preview and apply diffs inside VSCode",
+  "name": "just-paste-diff-lines",
+  "displayName": "Just Paste Diff Lines",
+  "description": "Easily preview and apply diffs inside VSCode without standard patch rules",
   "version": "1.0.0",
-  "publisher": "myself",
+  "publisher": "MuVu",
   "engines": {
     "vscode": "^1.85.0"
   },
