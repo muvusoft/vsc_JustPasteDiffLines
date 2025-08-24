@@ -5,12 +5,13 @@
   "version": "1.0.0",
   "publisher": "muvu",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.70.0"
   },
   "main": "./extension.js",
   "activationEvents": [
     "*",
-    "onView:diffView"
+    "onView:diffView",
+    "onCommand:justPasteDiff.openPanel"
   ],
   "contributes": {
     "viewsContainers": {
@@ -26,9 +27,16 @@
       "diffContainer": [
         {
           "id": "diffView",
-          "name": "Diff Panel"
+          "name": "Diff Panel",
+          "type": "webview"
         }
       ]
-    }
+    },
+    "commands": [
+      {
+        "command": "justPasteDiff.openPanel",
+        "title": "Just Paste Diff: Open Panel"
+      }
+    ]
   }
 }

@@ -1,63 +1,84 @@
 const vscode = require("vscode");
 
+/**
+ * DiffPanelProvider: view provider for Activity Bar panel
+ * We also register a fallback command that opens a WebviewPanel (works even if view-provider doesn't instantiate).
+ */
 class DiffPanelProvider {
+  constructor(extensionUri) {
+    this.extensionUri = extensionUri;
+    this._view = null;
+  }
+
   resolveWebviewView(webviewView) {
-    webviewView.webview.options = { enableScripts: true };
+    vscode.window.showInformationMessage("📌 Diff Panel view resolved (resolveWebviewView called)");
+    console.log("[JustPasteDiff] resolveWebviewView CALLED");
+    this._view = webviewView;
+
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.extensionUri]
+    };
+
     webviewView.webview.html = getHtml();
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showErrorMessage("No active editor!");
-        return;
-      }
-
-      const originalText = editor.document.getText();
-
-      if (message.command === "preview") {
-        try {
-          const newText = applyPatchCustom(originalText, message.diff);
-          const leftUri = vscode.Uri.parse("untitled:Original");
-          const rightUri = vscode.Uri.parse("untitled:Modified");
-
-          await vscode.workspace.openTextDocument(leftUri).then(() => {
-            const edit = new vscode.WorkspaceEdit();
-            edit.insert(leftUri, new vscode.Position(0, 0), originalText);
-            return vscode.workspace.applyEdit(edit);
-          });
-
-          await vscode.workspace.openTextDocument(rightUri).then(() => {
-            const edit = new vscode.WorkspaceEdit();
-            edit.insert(rightUri, new vscode.Position(0, 0), newText);
-            return vscode.workspace.applyEdit(edit);
-          });
-
-          vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "Diff Preview");
-        } catch (err) {
-          vscode.window.showErrorMessage("Failed to preview diff: " + err);
-        }
-      }
-
-      if (message.command === "apply") {
-        try {
-          const newText = applyPatchCustom(originalText, message.diff);
-          const edit = new vscode.WorkspaceEdit();
-          const fullRange = new vscode.Range(
-            editor.document.positionAt(0),
-            editor.document.positionAt(originalText.length)
-          );
-          edit.replace(editor.document.uri, fullRange, newText);
-          await vscode.workspace.applyEdit(edit);
-          await editor.document.save();
-          vscode.window.showInformationMessage("Changes applied!");
-        } catch (err) {
-          vscode.window.showErrorMessage("Failed to apply diff: " + err);
-        }
-      }
+      await handleMessage(message);
     });
   }
 }
 
+async function handleMessage(message) {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showErrorMessage("No active editor!");
+    return;
+  }
+  const originalText = editor.document.getText();
+
+  if (message.command === "preview") {
+    try {
+      const newText = applyPatchCustom(originalText, message.diff);
+      const leftUri = vscode.Uri.parse("untitled:Original");
+      const rightUri = vscode.Uri.parse("untitled:Modified");
+
+      await vscode.workspace.openTextDocument(leftUri).then(() => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(leftUri, new vscode.Position(0, 0), originalText);
+        return vscode.workspace.applyEdit(edit);
+      });
+
+      await vscode.workspace.openTextDocument(rightUri).then(() => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(rightUri, new vscode.Position(0, 0), newText);
+        return vscode.workspace.applyEdit(edit);
+      });
+
+      vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "Diff Preview");
+    } catch (err) {
+      vscode.window.showErrorMessage("Failed to preview diff: " + err);
+    }
+  } else if (message.command === "apply") {
+    try {
+      const newText = applyPatchCustom(originalText, message.diff);
+      const edit = new vscode.WorkspaceEdit();
+      const fullRange = new vscode.Range(
+        editor.document.positionAt(0),
+        editor.document.positionAt(originalText.length)
+      );
+      edit.replace(editor.document.uri, fullRange, newText);
+      await vscode.workspace.applyEdit(edit);
+      await editor.document.save();
+      vscode.window.showInformationMessage("Changes applied!");
+    } catch (err) {
+      vscode.window.showErrorMessage("Failed to apply diff: " + err);
+    }
+  }
+}
+
+/**
+ * Custom patch: only lines starting with + or - are acted on.
+ */
 function applyPatchCustom(originalText, diffText) {
   const originalLines = originalText.split("\n");
   const diffLines = diffText.split("\n");
@@ -75,6 +96,9 @@ function applyPatchCustom(originalText, diffText) {
   return result.join("\n");
 }
 
+/**
+ * The webview HTML (same for both view-provider and fallback panel)
+ */
 function getHtml() {
   const script = `
     const vscode = acquireVsCodeApi();
@@ -109,11 +133,32 @@ function getHtml() {
   `;
 }
 
+/**
+ * activate: register view provider AND a fallback command (open as WebviewPanel)
+ */
 function activate(context) {
-  const provider = new DiffPanelProvider();
+  vscode.window.showInformationMessage("🚀 Just Paste Diff Lines extension activated!");
+
+  const provider = new DiffPanelProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("diffView", provider)
   );
+
+  // fallback command: always works (createWebviewPanel)
+  const disposable = vscode.commands.registerCommand("justPasteDiff.openPanel", () => {
+    const panel = vscode.window.createWebviewPanel(
+      "justPasteDiff.panel",
+      "Diff Panel",
+      vscode.ViewColumn.Beside,
+      { enableScripts: true }
+    );
+    panel.webview.html = getHtml();
+
+    panel.webview.onDidReceiveMessage(async (message) => {
+      await handleMessage(message);
+    });
+  });
+  context.subscriptions.push(disposable);
 }
 
 function deactivate() {}
