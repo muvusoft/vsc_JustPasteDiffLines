@@ -1,13 +1,17 @@
 {
   "name": "just-paste-diff-lines",
   "displayName": "Just Paste Diff Lines",
-  "version": "0.0.1",
+  "description": "Paste + / - diffs and preview/apply them in VSCode",
+  "version": "1.0.0",
   "publisher": "muvu",
   "engines": {
     "vscode": "^1.85.0"
   },
   "main": "./extension.js",
-  "activationEvents": ["*"],
+  "activationEvents": [
+    "*",
+    "onView:diffView"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
