@@ -1,7 +1,8 @@
 const vscode = require("vscode");
-const Diff = require("diff");
 
 function activate(context) {
+  console.log("✅ Just Paste Diff Lines extension activated!");
+
   const provider = new DiffPanelProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("diffView", provider)
@@ -35,7 +36,7 @@ class DiffPanelProvider {
 
       if (message.command === "preview") {
         try {
-          const newText = applyPatch(originalText, message.diff);
+          const newText = applyPatchCustom(originalText, message.diff);
           const leftUri = vscode.Uri.parse("untitled:Original");
           const rightUri = vscode.Uri.parse("untitled:Modified");
 
@@ -64,7 +65,7 @@ class DiffPanelProvider {
 
       if (message.command === "apply") {
         try {
-          const newText = applyPatch(originalText, message.diff);
+          const newText = applyPatchCustom(originalText, message.diff);
 
           const edit = new vscode.WorkspaceEdit();
           const fullRange = new vscode.Range(
@@ -83,13 +84,30 @@ class DiffPanelProvider {
   }
 }
 
-function applyPatch(originalText, patchText) {
-  const patch = Diff.parsePatch(patchText);
-  const result = Diff.applyPatch(originalText, patch[0]);
-  if (!result) {
-    throw new Error("Could not apply diff!");
+/**
+ * Custom patch logic:
+ * - Lines starting with '+' → added
+ * - Lines starting with '-' → removed
+ * - All other lines in diff → ignored
+ */
+function applyPatchCustom(originalText, diffText) {
+  const originalLines = originalText.split("\n");
+  const diffLines = diffText.split("\n");
+
+  let result = [...originalLines];
+
+  for (const line of diffLines) {
+    if (line.startsWith("+")) {
+      result.push(line.slice(1));
+    } else if (line.startsWith("-")) {
+      const toRemove = line.slice(1);
+      const idx = result.indexOf(toRemove);
+      if (idx !== -1) result.splice(idx, 1);
+    }
+    // context satırlarını tamamen ignore ediyoruz
   }
-  return result;
+
+  return result.join("\n");
 }
 
 function getHtml(webview, extensionUri) {
@@ -110,13 +128,13 @@ function getHtml(webview, extensionUri) {
     <head>
       <style>
         body { font-family: sans-serif; padding: 10px; }
-        textarea { width: 100%; height: 200px; }
-        button { margin-top: 10px; margin-right: 10px; }
+        textarea { width: 100%; height: 200px; font-family: monospace; }
+        button { margin-top: 10px; margin-right: 10px; padding: 5px 12px; }
       </style>
     </head>
     <body>
-      <h3>Paste your diff below</h3>
-      <textarea id="diffText"></textarea><br>
+      <h3>Paste your diff (+/- lines only)</h3>
+      <textarea id="diffText" placeholder="+ added line\n- removed line"></textarea><br>
       <button onclick="preview()">Preview changes</button>
       <button onclick="apply()">Apply changes</button>
       <script>${script}</script>
