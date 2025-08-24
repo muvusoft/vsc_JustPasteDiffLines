@@ -117,7 +117,7 @@ class DiffViewProvider {
     padding: 8px;
     box-sizing: border-box;
   }
-  h3 { margin: 0; }
+  h3 { margin: 0; text-align: center; }
   p { margin: .2rem 0 .8rem 0; opacity: .8; }
   #diffInput {
     flex: 1;
@@ -141,10 +141,28 @@ class DiffViewProvider {
     border-radius: 4px;
   }
   .controls {
-    margin-top: .6rem;
+    margin-top: .8rem;
     display: flex;
-    gap: .5rem;
+    justify-content: center;
+    gap: .6rem;
     flex-wrap: wrap;
+  }
+  .controls button {
+    padding: 4px 10px;
+    font-size: 0.85rem;
+    border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border));
+    border-radius: 6px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .controls button:hover {
+    background: var(--vscode-button-hoverBackground);
+    transform: translateY(-1px);
+  }
+  .controls button:active {
+    transform: translateY(0);
   }
 </style>
 </head>
@@ -156,8 +174,8 @@ class DiffViewProvider {
     <div class="controls">
       <button id="btnPreview">Preview</button>
       <button id="btnApply">Apply</button>
-      <button id="btnReset">Reset Preview</button>
-      <button id="btnClose">Close Preview</button>
+      <button id="btnReset">Reset</button>
+      <button id="btnClose">Close</button>
     </div>
   </div>
   <script>
