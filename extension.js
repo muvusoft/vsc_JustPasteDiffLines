@@ -1,10 +1,7 @@
 // extension.js
 const vscode = require('vscode');
 
-/**
- * A virtual document content provider so we can reuse
- * the same diff tab for every Preview (no tab explosion).
- */
+/** Virtual diff documents so every Preview reuses the same tab */
 const DIFF_SCHEME = 'jpdiff';
 const LEFT_URI = vscode.Uri.parse(`${DIFF_SCHEME}:/preview/left`);
 const RIGHT_URI = vscode.Uri.parse(`${DIFF_SCHEME}:/preview/right`);
@@ -36,87 +33,61 @@ class JPDiffContentProvider {
 }
 
 function activate(context) {
-    console.log('Extension "just-paste-diff-lines" is active');
-
-    // Register our virtual content provider
     const diffContentProvider = new JPDiffContentProvider();
     context.subscriptions.push(
         vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, diffContentProvider)
     );
 
     const provider = new DiffViewProvider(context.extensionUri, diffContentProvider);
-
-    // View provider: id MUST match package.json -> contributes.views[*].id = "diffView"
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(DiffViewProvider.viewType, provider)
-    );
-
-    // Commands (also declared in package.json)
-    context.subscriptions.push(
-        vscode.commands.registerCommand('diffView.applyPatch', () => provider.applyPatch())
-    );
-    context.subscriptions.push(
-        vscode.commands.registerCommand('diffView.previewPatch', () => provider.previewPatch())
-    );
-    context.subscriptions.push(
-        vscode.commands.registerCommand('diffView.closePreview', () => provider.closePreview())
-    );
-    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(DiffViewProvider.viewType, provider),
+        vscode.commands.registerCommand('diffView.applyPatch', () => provider.applyPatch()),
+        vscode.commands.registerCommand('diffView.previewPatch', () => provider.previewPatch()),
+        vscode.commands.registerCommand('diffView.resetPreview', () => provider.resetPreview()),
+        vscode.commands.registerCommand('diffView.closePreview', () => provider.closePreview()),
         vscode.commands.registerCommand('justPasteDiff.openPanel', async () => {
-            // Reveal the container, then focus the view
-            try {
-                await vscode.commands.executeCommand('workbench.view.extension.diffContainer');
-            } catch {}
-            try {
-                // VS Code automatically contributes a <viewId>.focus command
-                await vscode.commands.executeCommand('diffView.focus');
-            } catch {}
-        })
+            try { await vscode.commands.executeCommand('workbench.view.extension.diffContainer'); } catch {}
+            try { await vscode.commands.executeCommand('diffView.focus'); } catch {}
+        }),
     );
 }
 
 class DiffViewProvider {
     static viewType = 'diffView';
-
     constructor(extensionUri, diffContentProvider) {
         this._extensionUri = extensionUri;
         this._view = null;
-        this._diffText = '';
         this._diffContentProvider = diffContentProvider;
+
+        /** State to make Apply work even when diff is focused */
+        this._lastSourceUri = null;    // URI of the document we previewed against
+        this._lastDiffText = '';       // Last diff text received from webview
     }
 
-    resolveWebviewView(webviewView, _context, _token) {
+    resolveWebviewView(webviewView) {
         this._view = webviewView;
-
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [this._extensionUri]
-        };
-
+        webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
         webviewView.webview.html = this._getHtmlForWebview();
 
-        // Panel kapatıldığında reset
         webviewView.onDidDispose(() => {
-            this._diffText = '';
-            // preview'i de temizle (sekmeyi kapatmasak bile içerik boş görünür)
+            // Don't touch the user's textarea; only clear preview panes
             this._diffContentProvider.reset();
+            // Keep _lastSourceUri/_lastDiffText so Apply can still work after panel closure if desired
         });
 
         webviewView.webview.onDidReceiveMessage(message => {
             if (!message) return;
             switch (message.command) {
                 case 'apply':
-                    this._diffText = message.text ?? '';
-                    vscode.commands.executeCommand('diffView.applyPatch').finally(() => {
-                        this._diffText = ''; // apply sonrası reset
-                    });
+                    this._lastDiffText = message.text ?? '';
+                    vscode.commands.executeCommand('diffView.applyPatch');
                     break;
                 case 'preview':
-                    this._diffText = message.text ?? '';
-                    vscode.commands.executeCommand('diffView.previewPatch').finally(() => {
-                        // _diffText'i saklamaya gerek yok, preview bir "geçici görüntü"
-                        this._diffText = '';
-                    });
+                    this._lastDiffText = message.text ?? '';
+                    vscode.commands.executeCommand('diffView.previewPatch');
+                    break;
+                case 'resetPreview':
+                    this.resetPreview();
                     break;
                 case 'closePreview':
                     vscode.commands.executeCommand('diffView.closePreview');
@@ -138,9 +109,10 @@ class DiffViewProvider {
   <h3 style="margin-top:0;">Just Paste Diff Lines</h3>
   <p style="opacity:.8;margin:.2rem 0 .8rem 0;">Only lines starting with <code>+</code> or <code>-</code> are considered. Others are ignored.</p>
   <textarea id="diffInput" style="width:100%;height:200px;"></textarea>
-  <div style="margin-top:.6rem; display:flex; gap:.5rem;">
+  <div style="margin-top:.6rem; display:flex; gap:.5rem; flex-wrap:wrap;">
     <button id="btnPreview">Preview</button>
     <button id="btnApply">Apply</button>
+    <button id="btnReset">Reset Preview</button>
     <button id="btnClose">Close Preview</button>
   </div>
   <script>
@@ -152,6 +124,9 @@ class DiffViewProvider {
     $('btnApply').addEventListener('click', () => {
       vscode.postMessage({ command: 'apply', text: $('diffInput').value });
     });
+    $('btnReset').addEventListener('click', () => {
+      vscode.postMessage({ command: 'resetPreview' });
+    });
     $('btnClose').addEventListener('click', () => {
       vscode.postMessage({ command: 'closePreview' });
     });
@@ -160,51 +135,80 @@ class DiffViewProvider {
 </html>`;
     }
 
-    applyPatch() {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active text editor to apply the patch.');
-            return;
+    /** Resolve a source document to work on, even if the diff is currently focused */
+    async _resolveSourceDocument() {
+        const active = vscode.window.activeTextEditor;
+        if (active && active.document?.uri?.scheme !== DIFF_SCHEME) {
+            this._lastSourceUri = active.document.uri;
+            return active.document;
         }
+        // If active is the diff or there's no active editor, fall back to last known source
+        if (this._lastSourceUri) {
+            try {
+                return await vscode.workspace.openTextDocument(this._lastSourceUri);
+            } catch {}
+        }
+        vscode.window.showErrorMessage('No source document to operate on. Focus a text editor and try again.');
+        return null;
+    }
 
-        const originalText = editor.document.getText();
-        const diff = this._diffText ?? '';
-        const patchedText = applyPatchCustom(originalText, diff);
+    async applyPatch() {
+        const doc = await this._resolveSourceDocument();
+        if (!doc) return;
 
-        editor.edit(editBuilder => {
+        const originalText = doc.getText();
+        const patchedText = applyPatchCustom(originalText, this._lastDiffText ?? '');
+
+        // Show the source doc to get a TextEditor we can edit,
+        // even if the diff editor currently has focus.
+        const editor = await vscode.window.showTextDocument(doc, { preview: false });
+
+        await editor.edit(editBuilder => {
             const start = new vscode.Position(0, 0);
-            const end = new vscode.Position(editor.document.lineCount, 0);
+            const end = new vscode.Position(doc.lineCount, 0);
             editBuilder.replace(new vscode.Range(start, end), patchedText);
         });
+
+        // Optional: keep preview open but refresh it to reflect "no diff" state
+        try {
+            this._diffContentProvider.setContents(patchedText, patchedText);
+        } catch {}
+        // Do NOT clear user's textarea; allow them to tweak and preview again
+        // If needed, they can Reset Preview or Close Preview manually.
     }
 
     async previewPatch() {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active text editor to preview the patch.');
-            return;
-        }
+        const doc = await this._resolveSourceDocument();
+        if (!doc) return;
 
-        const originalText = editor.document.getText();
-        const diff = this._diffText ?? '';
-        const patchedText = applyPatchCustom(originalText, diff);
+        const originalText = doc.getText();
+        const patchedText = applyPatchCustom(originalText, this._lastDiffText ?? '');
 
-        // Tek bir diff sekmesi: içerikleri güncelle, sekmeyi aç (veya ön plana getir).
+        // Remember the source we previewed against
+        this._lastSourceUri = doc.uri;
+
+        // Update single diff tab
         this._diffContentProvider.setContents(originalText, patchedText);
         await vscode.commands.executeCommand('vscode.diff', LEFT_URI, RIGHT_URI, 'Just Paste Diff: Preview');
     }
 
+    resetPreview() {
+        // Only clear the preview panes; do not touch user's textarea or last diff text
+        this._diffContentProvider.reset();
+    }
+
     async closePreview() {
-        // İçeriği sıfırla (sekme açık kalsa da boş görünür)
+        // Clear preview content first
         this._diffContentProvider.reset();
 
-        // Açık diff sekmesini kapatmaya çalış
+        // Try to close any open diff tabs that match our URIs
         try {
             const groups = vscode.window.tabGroups.all;
             const toClose = [];
             for (const g of groups) {
                 for (const tab of g.tabs) {
                     const input = tab.input;
+                    // VS Code API: TabInputTextDiff has 'original' and 'modified' URIs
                     if (input && input.original && input.modified) {
                         const o = input.original;
                         const m = input.modified;
@@ -217,24 +221,28 @@ class DiffViewProvider {
             if (toClose.length) {
                 await vscode.window.tabGroups.close(toClose, true);
             }
-        } catch {
-            // fallback: aktif editörü kapat
-            await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+        } catch {}
+        // Return focus to source doc if we know it
+        if (this._lastSourceUri) {
+            try {
+                const doc = await vscode.workspace.openTextDocument(this._lastSourceUri);
+                await vscode.window.showTextDocument(doc, { preview: false });
+            } catch {}
         }
     }
 }
 
 /**
- * Custom patch v2:
+ * Diff logic:
  * - Only lines starting with + or - are considered.
- * - "- old" followed immediately by "+ new" => replace first matching "old" (from current cursor) with "new".
- * - Lone "- old" => delete first matching "old" (from current cursor).
- * - Lone "+ new" => insert after the last touched position (or end if none).
+ * - "- old" followed by "+ new" => replace first matching "old" (from current cursor), else append at end.
+ * - Lone "- old" => delete first matching "old" (from current cursor), else no-op.
+ * - Lone "+ new" => insert after last touched position (cursor), clamped to end.
  * - Preserves original EOL style.
  */
 function applyPatchCustom(originalText, diffText) {
-    const EOL = originalText.includes('\\r\\n') ? '\\r\\n' : '\\n';
-    let lines = originalText.split(/\\r?\\n/);
+    const EOL = originalText.includes('\r\n') ? '\r\n' : '\n';
+    let lines = originalText.split(/\r?\n/);
 
     const ops = parseSimpleDiff(diffText || '');
 
@@ -247,7 +255,7 @@ function applyPatchCustom(originalText, diffText) {
                 lines.splice(pos, 1, op.new);
                 cursor = pos + 1;
             } else {
-                const insertPos = clamp(cursor, 0, lines.length);
+                const insertPos = lines.length;
                 lines.splice(insertPos, 0, op.new);
                 cursor = insertPos + 1;
             }
@@ -268,9 +276,8 @@ function applyPatchCustom(originalText, diffText) {
     return lines.join(EOL);
 }
 
-/** Parse only +/- lines. "- x" followed by "+ y" => replace; others => delete/insert. */
 function parseSimpleDiff(diffText) {
-    const raw = (diffText || '').split(/\\r?\\n/);
+    const raw = (diffText || '').split(/\r?\n/);
     const ops = [];
     for (let i = 0; i < raw.length; i++) {
         const s = raw[i];
@@ -279,32 +286,25 @@ function parseSimpleDiff(diffText) {
             if (i + 1 < raw.length && raw[i + 1].startsWith('+')) {
                 const newLine = raw[i + 1].slice(1);
                 ops.push({ type: 'replace', old: oldLine, new: newLine });
-                i++; // consume the + line
+                i++;
             } else {
                 ops.push({ type: 'delete', old: oldLine });
             }
         } else if (s.startsWith('+')) {
             ops.push({ type: 'insert', new: s.slice(1) });
-        } // everything else ignored
+        }
     }
     return ops;
 }
 
-/** Find exact line match from a starting index */
 function indexOfLine(arr, value, fromIndex) {
     for (let i = Math.max(0, fromIndex | 0); i < arr.length; i++) {
         if (arr[i] === value) return i;
     }
     return -1;
 }
-
-function clamp(x, min, max) {
-    return Math.min(Math.max(x, min), max);
-}
+function clamp(x, min, max) { return Math.min(Math.max(x, min), max); }
 
 function deactivate() {}
 
-module.exports = {
-    activate,
-    deactivate
-};
+module.exports = { activate, deactivate };
