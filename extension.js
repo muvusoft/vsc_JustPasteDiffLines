@@ -193,6 +193,12 @@ class DiffViewProvider {
     $('btnClose').addEventListener('click', () => {
       vscode.postMessage({ command: 'closePreview' });
     });
+    // Otomatik preview: sadece kullanıcı diff yapıştırınca
+    $('diffInput').addEventListener('paste', () => {
+      setTimeout(() => {
+        vscode.postMessage({ command: 'preview', text: $('diffInput').value });
+      }, 50); // paste input'a işlensin diye küçük delay
+    }); 
   </script>
 </body>
 </html>`;
