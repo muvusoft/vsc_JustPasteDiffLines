@@ -1,0 +1,24 @@
+# Paket dosyaları
+*.vsix
+
+# Node.js bağımlılıkları
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Test ve dökümantasyon
+test/
+tests/
+coverage/
+docs/
+
+# Git ve IDE dosyaları
+.git/
+.gitignore
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Geçici dosyalar
+*.tmp
+*.log

@@ -1,11 +1,11 @@
 {
   "name": "just-paste-diff-lines",
   "displayName": "Just Paste Diff Lines",
-  "description": "Paste + / - diffs and preview/apply them in VSCode",
-  "version": "1.0.0",
-  "publisher": "muvu",
+  "description": "No Complex Rules! - Just Paste + / - diffs and preview/apply them in VSCode",
+  "version": "3.0.0",
+  "publisher": "muvusoft",
   "engines": {
-    "vscode": "^1.70.0"
+    "vscode": "^1.99.0"
   },
   "main": "./extension.js",
   "activationEvents": [
@@ -46,10 +46,13 @@
       }
     ]
   },
-  "scripts": {
-    "vscode:prepublish": "npx --no-install vsce package"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miropharm/vsc_JustPasteDiffLines"
   },
-  "devDependencies": {
-    "vsce": "^2.15.0"
-  }
+  "bugs": {
+    "url": "https://github.com/miropharm/vsc_JustPasteDiffLines/issues"
+  },
+  "homepage": "https://github.com/miropharm/vsc_JustPasteDiffLines",
+  "scripts": {}
 }
