@@ -2,7 +2,7 @@
   "name": "just-paste-diff-lines",
   "displayName": "Just Paste Diff Lines",
   "description": "No Complex Rules! - Just Paste + / - diffs and preview/apply them in VSCode",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "publisher": "muvusoft",
   "engines": {
     "vscode": "^1.99.0"
@@ -54,5 +54,6 @@
     "url": "https://github.com/miropharm/vsc_JustPasteDiffLines/issues"
   },
   "homepage": "https://github.com/miropharm/vsc_JustPasteDiffLines",
-  "scripts": {}
+  "scripts": {},
+  "icon": "media/icon.png"
 }

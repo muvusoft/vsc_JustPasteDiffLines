@@ -3,7 +3,10 @@
 🚀 **A minimal, no-frills diff tool for VS Code.**  
 Paste only the lines starting with `+` or `-`, preview the result, and apply with a single click.  
 
-This extension is designed to make testing small patches fast and frictionless – whether from code reviews, AI-generated suggestions, or forum posts.  
+This extension is designed to make testing small patches fast and frictionless – whether from code reviews, AI-generated suggestions, or forum posts.
+
+
+![Diff Tool Preview](media/sc.jpg)
 
 ---
 
@@ -20,11 +23,6 @@ This extension is designed to make testing small patches fast and frictionless �
 ## 🖼️ Example
 
 Paste this into the diff panel:
-
--console.log("foo");
-+console.log("bar");
-
-or, if you prefer you can paste with remarks, both are same:
 
 ```diff
 -console.log("foo");
@@ -53,7 +51,7 @@ Then hit **Preview** → see the diff → **Apply** to patch your file.
 
 ## 🤖 Using with AI Assistants (ChatGPT, Grok, Claude, Mistral, etc.)
 
-Large language models (LMM) often propose code changes . Instruct them to use in simple with `-` and `+` diff-like formats.  
+Large language models (LLMs) often propose code changes . Instruct them to output simple diff-like changes using `-` and `+` prefixes.  
 This extension makes it easy to apply them:  
 
 - Instruct the model to output changes **only with `-` and `+` prefixes**, for example:
