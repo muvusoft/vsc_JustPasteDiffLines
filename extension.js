@@ -77,7 +77,11 @@ class DiffViewProvider {
             switch (message.command) {
                 case 'apply':
                     this._lastDiffText = message.text ?? '';
-                    vscode.commands.executeCommand('diffView.applyPatch');
+                    vscode.commands.executeCommand('diffView.applyPatch').then(() => {
+                        if (message.autoClear) {
+                            this._view?.webview.postMessage({ command: 'clearInput' });
+                        }
+                    });
                     break;
                 case 'preview':
                     this._lastDiffText = message.text ?? '';
@@ -107,7 +111,7 @@ class DiffViewProvider {
     padding: 0;
     height: 100%;
     width: 100%;
-    overflow: hidden; /* dış scrollbar tamamen gizlenir */
+    overflow: hidden;
     font-family: var(--vscode-font-family);
   }
   .wrap {
@@ -174,8 +178,14 @@ class DiffViewProvider {
     <div class="controls">
       <button id="btnPreview">Preview</button>
       <button id="btnApply">Apply</button>
+      <button id="btnPaste">Paste</button>
+      <button id="btnClear">Clear</button>
       <button id="btnReset">Reset</button>
       <button id="btnClose">Close</button>
+      <label>
+        <input type="checkbox" id="chkAutoClear" checked />
+        Auto Clear after Apply
+      </label>
     </div>
   </div>
   <script>
@@ -185,7 +195,7 @@ class DiffViewProvider {
       vscode.postMessage({ command: 'preview', text: $('diffInput').value });
     });
     $('btnApply').addEventListener('click', () => {
-      vscode.postMessage({ command: 'apply', text: $('diffInput').value });
+      vscode.postMessage({ command: 'apply', text: $('diffInput').value, autoClear: $('chkAutoClear').checked });
     });
     $('btnReset').addEventListener('click', () => {
       vscode.postMessage({ command: 'resetPreview' });
@@ -193,12 +203,30 @@ class DiffViewProvider {
     $('btnClose').addEventListener('click', () => {
       vscode.postMessage({ command: 'closePreview' });
     });
-    // Otomatik preview: sadece kullanıcı diff yapıştırınca
+    $('btnPaste').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        $('diffInput').value = text;
+        vscode.postMessage({ command: 'preview', text });
+      } catch (err) {
+        console.error('Clipboard read failed', err);
+      }
+    });
+    $('btnClear').addEventListener('click', () => {
+      $('diffInput').value = '';
+      vscode.postMessage({ command: 'resetPreview' });
+    });
     $('diffInput').addEventListener('paste', () => {
       setTimeout(() => {
         vscode.postMessage({ command: 'preview', text: $('diffInput').value });
-      }, 50); // paste input'a işlensin diye küçük delay
-    }); 
+      }, 50);
+    });
+    window.addEventListener('message', event => {
+      const msg = event.data;
+      if (msg.command === 'clearInput') {
+        $('diffInput').value = '';
+      }
+    });
   </script>
 </body>
 </html>`;
@@ -321,7 +349,9 @@ function applyPatchCustom(originalText, diffText) {
     const ops = parseSimpleDiff(diffText || '');
     let cursor = 0;
     for (const op of ops) {
-        if (op.type === 'replace') {
+        if (op.type === 'resetCursor') {
+            cursor = 0;
+        } else if (op.type === 'replace') {
             let pos = indexOfLine(lines, op.old, cursor);
             if (pos === -1) pos = indexOfLine(lines, op.old, 0);
             if (pos !== -1) {
@@ -353,7 +383,9 @@ function parseSimpleDiff(diffText) {
     const ops = [];
     for (let i = 0; i < raw.length; i++) {
         const s = raw[i];
-        if (s.startsWith('-')) {
+        if (s.startsWith('@@')) {
+            ops.push({ type: 'resetCursor' });
+        } else if (s.startsWith('-')) {
             const oldLine = s.slice(1);
             if (i + 1 < raw.length && raw[i + 1].startsWith('+')) {
                 const newLine = raw[i + 1].slice(1);
